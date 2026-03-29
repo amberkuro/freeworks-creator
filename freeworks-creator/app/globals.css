@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap");
+
+:root {
+  --brand-bg: #f8f6f1;
+  --brand-yellow: #f2c80f;
+  --brand-yellow-hover: #e0b800;
+  --brand-yellow-glow: rgba(242, 200, 15, 0.25);
+  --brand-yellow-soft: rgba(242, 200, 15, 0.1);
+  --brand-black: #0a0a0a;
+  --brand-border: rgba(0, 0, 0, 0.06);
+}
+
+body {
+  background: var(--brand-bg);
+  font-family: "Pretendard", -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #1a1a1a;
+}
+
+::selection {
+  background: var(--brand-yellow-soft);
+  color: var(--brand-black);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--brand-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 3px;
+}
+
+/* Yellow CTA button hover */
+.btn-yellow:hover {
+  background: var(--brand-yellow-hover) !important;
+  box-shadow: 0 6px 24px var(--brand-yellow-glow) !important;
+  transform: translateY(-1px);
+}
+
+.btn-ghost:hover {
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Glass card base */
+.glass-card {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--brand-border);
+  border-radius: 16px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.04);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card-hover:hover {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+  transform: translateY(-4px);
+}
+
+/* Section title styles */
+.section-sub {
+  font-family: "Syne", sans-serif;
+  font-size: 11px;
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  color: #9e9e9e;
+  font-weight: 600;
+}
+
+.section-heading {
+  font-family: "Syne", sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--brand-black);
+  line-height: 1.2;
+}
