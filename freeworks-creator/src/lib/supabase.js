@@ -1,140 +1,85 @@
 /**
- * Supabase 서버 클라이언트
- * - Storage: 파일 업로드 (로컬 fallback API용)
- * - DB: PostgREST API로 테이블 CRUD
+ * Supabase 클라이언트 (fetch 기반, SDK 불필요)
  *
- * 환경변수:
- *   NEXT_PUBLIC_SUPABASE_URL
- *   SUPABASE_SERVICE_ROLE_KEY (서버 전용, 모든 테이블 접근)
+ * 브라우저: NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY
+ * 서버: 위 + SUPABASE_SERVICE_ROLE_KEY (있으면 RLS 우회)
  */
 
-let instance = null;
+// ─── 브라우저용 (신청 insert 등 공개 작업) ───
+export function getSupabaseUrl() {
+  return process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+}
 
-export function getSupabase() {
-  if (instance) return instance;
+export function getSupabaseAnonKey() {
+  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+}
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// ─── 서버용 (관리자 조회/수정) ───
+export function getServerKey() {
+  return process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+}
+
+/**
+ * Supabase REST API 호출 헬퍼 (서버용)
+ */
+export async function supabaseQuery(method, table, options = {}) {
+  const url = getSupabaseUrl();
+  const key = getServerKey();
 
   if (!url || !key) {
-    console.log("[Supabase] 환경변수 없음 — 개발 모드");
-    return null;
+    console.error("[Supabase] 환경변수 미설정 — URL:", !!url, "KEY:", !!key);
+    return { data: null, error: { message: "Supabase 환경변수가 설정되지 않았습니다." } };
   }
 
-  instance = {
-    url,
-    key,
-
-    // ─── Storage ───
-    storage: {
-      from: (bucket) => ({
-        upload: async (path, file, options) => {
-          const res = await fetch(`${url}/storage/v1/object/${bucket}/${path}`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${key}`,
-              ...(options?.contentType ? { "Content-Type": options.contentType } : {}),
-            },
-            body: file,
-          });
-          if (!res.ok) {
-            const err = await res.json();
-            return { data: null, error: err };
-          }
-          return { data: { path }, error: null };
-        },
-        getPublicUrl: (path) => ({
-          data: { publicUrl: `${url}/storage/v1/object/public/${bucket}/${path}` },
-        }),
-      }),
-    },
-
-    // ─── DB (PostgREST) ───
-    from: (table) => {
-      const headers = {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      };
-
-      return {
-        // SELECT
-        select: async (columns = "*", options = {}) => {
-          let queryUrl = `${url}/rest/v1/${table}?select=${columns}`;
-          if (options.eq) {
-            for (const [col, val] of Object.entries(options.eq)) {
-              queryUrl += `&${col}=eq.${val}`;
-            }
-          }
-          if (options.order) {
-            queryUrl += `&order=${options.order}`;
-          }
-          if (options.limit) {
-            queryUrl += `&limit=${options.limit}`;
-          }
-          try {
-            const res = await fetch(queryUrl, { headers, cache: "no-store" });
-            if (!res.ok) {
-              const err = await res.json();
-              return { data: null, error: err };
-            }
-            const data = await res.json();
-            return { data, error: null };
-          } catch (err) {
-            return { data: null, error: { message: err.message } };
-          }
-        },
-
-        // INSERT
-        insert: async (row) => {
-          try {
-            const res = await fetch(`${url}/rest/v1/${table}`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify(row),
-            });
-            if (!res.ok) {
-              const err = await res.json();
-              return { data: null, error: err };
-            }
-            const data = await res.json();
-            return { data: Array.isArray(data) ? data[0] : data, error: null };
-          } catch (err) {
-            return { data: null, error: { message: err.message } };
-          }
-        },
-
-        // UPDATE
-        update: async (updates, options = {}) => {
-          let queryUrl = `${url}/rest/v1/${table}`;
-          if (options.eq) {
-            const params = Object.entries(options.eq)
-              .map(([col, val]) => `${col}=eq.${val}`)
-              .join("&");
-            queryUrl += `?${params}`;
-          }
-          try {
-            const res = await fetch(queryUrl, {
-              method: "PATCH",
-              headers,
-              body: JSON.stringify(updates),
-            });
-            if (!res.ok) {
-              const err = await res.json();
-              return { data: null, error: err };
-            }
-            const data = await res.json();
-            return { data: Array.isArray(data) ? data[0] : data, error: null };
-          } catch (err) {
-            return { data: null, error: { message: err.message } };
-          }
-        },
-      };
-    },
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+    Prefer: "return=representation",
   };
 
-  return instance;
+  let endpoint = `${url}/rest/v1/${table}`;
+
+  // SELECT
+  if (method === "GET") {
+    const params = new URLSearchParams();
+    if (options.select) params.set("select", options.select);
+    if (options.order) params.set("order", options.order);
+    if (options.eq) {
+      for (const [col, val] of Object.entries(options.eq)) {
+        params.set(col, `eq.${val}`);
+      }
+    }
+    endpoint += `?${params.toString()}`;
+  }
+
+  // UPDATE — eq 조건 필수
+  if (method === "PATCH" && options.eq) {
+    const params = Object.entries(options.eq).map(([c, v]) => `${c}=eq.${v}`).join("&");
+    endpoint += `?${params}`;
+  }
+
+  try {
+    const res = await fetch(endpoint, {
+      method,
+      headers,
+      cache: "no-store",
+      ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+    });
+
+    const text = await res.text();
+
+    if (!res.ok) {
+      console.error(`[Supabase ${method} 에러] ${res.status}:`, text);
+      return { data: null, error: { message: text, status: res.status } };
+    }
+
+    const data = text ? JSON.parse(text) : null;
+    return { data, error: null };
+  } catch (err) {
+    console.error(`[Supabase ${method} 예외]`, err.message);
+    return { data: null, error: { message: err.message } };
+  }
 }
 
 export const STORAGE_BUCKET = "portfolios";
