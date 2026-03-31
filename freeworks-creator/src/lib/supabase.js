@@ -1,85 +1,49 @@
-/**
- * Supabase 클라이언트 (fetch 기반, SDK 불필요)
- *
- * 브라우저: NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY
- * 서버: 위 + SUPABASE_SERVICE_ROLE_KEY (있으면 RLS 우회)
- */
-
-// ─── 브라우저용 (신청 insert 등 공개 작업) ───
-export function getSupabaseUrl() {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-}
-
-export function getSupabaseAnonKey() {
-  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-}
-
-// ─── 서버용 (관리자 조회/수정) ───
-export function getServerKey() {
-  return process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-}
+import { createClient } from "@supabase/supabase-js";
 
 /**
- * Supabase REST API 호출 헬퍼 (서버용)
+ * 브라우저 + 서버 공용 Supabase 클라이언트
+ * @supabase/supabase-js 공식 SDK 사용
  */
-export async function supabaseQuery(method, table, options = {}) {
-  const url = getSupabaseUrl();
-  const key = getServerKey();
+
+let supabase = null;
+
+export function getSupabase() {
+  if (supabase) return supabase;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !key) {
-    console.error("[Supabase] 환경변수 미설정 — URL:", !!url, "KEY:", !!key);
-    return { data: null, error: { message: "Supabase 환경변수가 설정되지 않았습니다." } };
+    console.error("[Supabase] 환경변수 미설정");
+    console.error("  NEXT_PUBLIC_SUPABASE_URL:", url ? "OK" : "없음");
+    console.error("  NEXT_PUBLIC_SUPABASE_ANON_KEY:", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "OK" : "없음");
+    return null;
   }
 
-  const headers = {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
-    Prefer: "return=representation",
-  };
+  supabase = createClient(url, key);
+  console.log("[Supabase] 클라이언트 생성 완료:", url);
+  return supabase;
+}
 
-  let endpoint = `${url}/rest/v1/${table}`;
+/**
+ * 브라우저 전용 클라이언트 (ANON_KEY)
+ * 신청 insert 등 공개 작업용
+ */
+let browserClient = null;
 
-  // SELECT
-  if (method === "GET") {
-    const params = new URLSearchParams();
-    if (options.select) params.set("select", options.select);
-    if (options.order) params.set("order", options.order);
-    if (options.eq) {
-      for (const [col, val] of Object.entries(options.eq)) {
-        params.set(col, `eq.${val}`);
-      }
-    }
-    endpoint += `?${params.toString()}`;
+export function getBrowserSupabase() {
+  if (browserClient) return browserClient;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    console.error("[Supabase Browser] 환경변수 미설정");
+    return null;
   }
 
-  // UPDATE — eq 조건 필수
-  if (method === "PATCH" && options.eq) {
-    const params = Object.entries(options.eq).map(([c, v]) => `${c}=eq.${v}`).join("&");
-    endpoint += `?${params}`;
-  }
-
-  try {
-    const res = await fetch(endpoint, {
-      method,
-      headers,
-      cache: "no-store",
-      ...(options.body ? { body: JSON.stringify(options.body) } : {}),
-    });
-
-    const text = await res.text();
-
-    if (!res.ok) {
-      console.error(`[Supabase ${method} 에러] ${res.status}:`, text);
-      return { data: null, error: { message: text, status: res.status } };
-    }
-
-    const data = text ? JSON.parse(text) : null;
-    return { data, error: null };
-  } catch (err) {
-    console.error(`[Supabase ${method} 예외]`, err.message);
-    return { data: null, error: { message: err.message } };
-  }
+  browserClient = createClient(url, key);
+  return browserClient;
 }
 
 export const STORAGE_BUCKET = "portfolios";

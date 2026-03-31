@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseQuery } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
 
 /**
@@ -12,16 +12,22 @@ export async function GET() {
       return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
     }
 
-    const { data, error } = await supabaseQuery("GET", "applications", {
-      select: "*",
-      order: "created_at.desc",
-    });
+    const supabase = getSupabase();
+    if (!supabase) {
+      return NextResponse.json({ error: "Supabase 미연결" }, { status: 500 });
+    }
+
+    const { data, error } = await supabase
+      .from("applications")
+      .select("*")
+      .order("created_at", { ascending: false });
 
     if (error) {
+      console.error("[GET applications] 에러:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // DB 컬럼 → 프론트 형식 변환
+    // DB 컬럼 → 프론트 형식
     const apps = (data || []).map((row) => ({
       id: String(row.id),
       artist_name: row.name || "",
@@ -31,15 +37,18 @@ export async function GET() {
       product_category: row.category || "",
       product_description: row.description || "",
       status: row.status || "pending",
-      created_at: row.created_at ? new Date(row.created_at).toLocaleDateString("ko-KR") : "",
-      portfolio_files: parsePortfolioUrls(row.portfolio_urls),
+      created_at: row.created_at
+        ? new Date(row.created_at).toLocaleDateString("ko-KR")
+        : "",
+      portfolio_files: parsePortfolio(row.portfolio_urls),
       isVipCreator: row.vip || false,
       adminMemo: row.vip_icon || "",
     }));
 
+    console.log(`[GET applications] ${apps.length}건 조회`);
     return NextResponse.json({ data: apps });
   } catch (err) {
-    console.error("[GET /api/applications]", err);
+    console.error("[GET applications] 예외:", err);
     return NextResponse.json({ error: "서버 오류" }, { status: 500 });
   }
 }
@@ -51,44 +60,49 @@ export async function PATCH(request) {
   try {
     const user = getCurrentUser();
     if (!user || !isAdmin(user)) {
-      return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
+      return NextResponse.json({ error: "권한 없음" }, { status: 403 });
     }
 
     const { id, updates } = await request.json();
     if (!id) return NextResponse.json({ error: "ID 필요" }, { status: 400 });
 
+    const supabase = getSupabase();
+    if (!supabase) {
+      return NextResponse.json({ error: "Supabase 미연결" }, { status: 500 });
+    }
+
+    // 프론트 필드 → DB 컬럼
     const dbUpdates = {};
     if (updates.status !== undefined) dbUpdates.status = updates.status;
     if (updates.isVipCreator !== undefined) dbUpdates.vip = updates.isVipCreator;
     if (updates.adminMemo !== undefined) dbUpdates.vip_icon = updates.adminMemo;
 
-    const { data, error } = await supabaseQuery("PATCH", "applications", {
-      body: dbUpdates,
-      eq: { id: Number(id) },
-    });
+    console.log(`[PATCH applications] id=${id}`, dbUpdates);
+
+    const { data, error } = await supabase
+      .from("applications")
+      .update(dbUpdates)
+      .eq("id", Number(id))
+      .select();
 
     if (error) {
+      console.error("[PATCH applications] 에러:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, data });
   } catch (err) {
-    console.error("[PATCH /api/applications]", err);
+    console.error("[PATCH applications] 예외:", err);
     return NextResponse.json({ error: "서버 오류" }, { status: 500 });
   }
 }
 
-function parsePortfolioUrls(raw) {
+function parsePortfolio(raw) {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-    return [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return raw.split(",").filter(Boolean).map((url) => ({
-      name: url.trim().split("/").pop() || "file",
-      url: url.trim(),
-      type: "application/octet-stream",
-    }));
+    return [];
   }
 }
